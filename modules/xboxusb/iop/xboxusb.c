@@ -11,6 +11,9 @@
 
 IRX_ID("xboxusb", 1, 1);
 
+#define EASYSMX_VID 0x2f24
+#define EASYSMX_PID 0x0115
+#define PADEMU_NO_BUFFER 1
 #define XBOXUSB_BIND_RPC_ID 0x18E38791
 #define XBOXUSB_GET_RAW     1
 #define XBOXUSB_GET_DATA    2
@@ -24,6 +27,15 @@ IRX_ID("xboxusb", 1, 1);
 #define RAW_REPORT_SIZE 64
 #define RPC_REPORT_SIZE 72
 #define XBOXUSB_INPUT_PACKET 0x20
+
+static u8 ApplyStickSensitivity(u8 raw_val) {
+    int centered = (int)raw_val - 128;
+    if (centered > -12 && centered < 12) return 128; // Center deadzone filter
+    float scaled = (float)centered * 1.35f;          // 1.35x responsiveness boost
+    if (scaled > 127.0f) scaled = 127.0f;
+    if (scaled < -128.0f) scaled = -128.0f;
+    return (u8)((int)scaled + 128);
+}
 
 typedef struct xboxusb_device
 {
@@ -100,8 +112,7 @@ static int usb_probe(int devId)
     if (device == NULL)
         return 0;
 
-    return device->idVendor == XBOX_VENDOR_MICROSOFT;
-}
+    return (device->idVendor == XBOX_VENDOR_MICROSOFT) || (device->idVendor == EASYSMX_VID);}
 
 static int usb_connect(int devId)
 {
@@ -342,10 +353,10 @@ static void xboxusb_translate_input(const u8 *in, struct ds2report *out)
         buttons |= DS2ButtonR2;
 
     out->nButtonState = ~buttons;
-    out->LeftStickX = xboxusb_axis_to_ds2(in[10], in[11]);
-    out->LeftStickY = 255 - xboxusb_axis_to_ds2(in[12], in[13]);
-    out->RightStickX = xboxusb_axis_to_ds2(in[14], in[15]);
-    out->RightStickY = 255 - xboxusb_axis_to_ds2(in[16], in[17]);
+    out->LeftStickX  = ApplyStickSensitivity(xboxusb_axis_to_ds2(in[10], in[11]));
+    out->LeftStickY  = ApplyStickSensitivity(255 - xboxusb_axis_to_ds2(in[12], in[13]));
+    out->RightStickX = ApplyStickSensitivity(xboxusb_axis_to_ds2(in[14], in[15]));
+    out->RightStickY = ApplyStickSensitivity(255 - xboxusb_axis_to_ds2(in[16], in[17]));
 
     out->PressureUp = (buttons & DS2ButtonUp) ? 0xFF : 0x00;
     out->PressureDown = (buttons & DS2ButtonDown) ? 0xFF : 0x00;
